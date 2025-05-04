@@ -11,6 +11,14 @@ from google.cloud import cloudquotas_v1
 from mistralai import Mistral
 from concurrent.futures import ThreadPoolExecutor
 import time
+import re
+
+from data import (
+    MODEL_TO_NAME_MAPPING,
+    HYPERBOLIC_IGNORED_MODELS,
+    LAMBDA_IGNORED_MODELS,
+    OPENROUTER_IGNORED_MODELS,
+)
 
 
 load_dotenv()
@@ -19,214 +27,6 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 # Global clients
 mistral_client = Mistral(api_key=os.environ["MISTRAL_API_KEY"])
 last_mistral_request_time = 0
-
-MODEL_TO_NAME_MAPPING = {
-    "@cf/deepseek-ai/deepseek-math-7b-instruct": "Deepseek Math 7B Instruct",
-    "@cf/defog/sqlcoder-7b-2": "SQLCoder 7B 2",
-    "@cf/fblgit/una-cybertron-7b-v2-bf16": "Una Cybertron 7B v2 (BF16)",
-    "@cf/google/gemma-2b-it-lora": "Gemma 2B Instruct (LoRA)",
-    "@cf/google/gemma-7b-it-lora": "Gemma 7B Instruct (LoRA)",
-    "@cf/meta-llama/llama-2-7b-chat-hf-lora": "Llama 2 7B Chat (LoRA)",
-    "@cf/meta/llama-2-7b-chat-fp16": "Llama 2 7B Chat (FP16)",
-    "@cf/meta/llama-2-7b-chat-int8": "Llama 2 7B Chat (INT8)",
-    "@cf/meta/llama-3-8b-instruct-awq": "Llama 3 8B Instruct (AWQ)",
-    "@cf/meta/llama-3-8b-instruct": "Llama 3 8B Instruct",
-    "@cf/meta/llama-3.1-8b-instruct-awq": "Llama 3.1 8B Instruct (AWQ)",
-    "@cf/meta/llama-3.1-8b-instruct-fp8": "Llama 3.1 8B Instruct (FP8)",
-    "@cf/meta/llama-3.1-8b-instruct": "Llama 3.1 8B Instruct",
-    "@cf/microsoft/phi-2": "Phi-2",
-    "@cf/mistral/mistral-7b-instruct-v0.1-vllm": "Mistral 7B Instruct v0.1",
-    "@cf/mistral/mistral-7b-instruct-v0.1": "Mistral 7B Instruct v0.1",
-    "@cf/mistral/mistral-7b-instruct-v0.2-lora": "Mistral 7B Instruct v0.2 (LoRA)",
-    "@cf/openchat/openchat-3.5-0106": "OpenChat 3.5 0106",
-    "@cf/qwen/qwen1.5-0.5b-chat": "Qwen 1.5 0.5B Chat",
-    "@cf/qwen/qwen1.5-1.8b-chat": "Qwen 1.5 1.8B Chat",
-    "@cf/qwen/qwen1.5-14b-chat-awq": "Qwen 1.5 14B Chat (AWQ)",
-    "@cf/qwen/qwen1.5-7b-chat-awq": "Qwen 1.5 7B Chat (AWQ)",
-    "@cf/thebloke/discolm-german-7b-v1-awq": "Discolm German 7B v1 (AWQ)",
-    "@cf/tiiuae/falcon-7b-instruct": "Falcom 7B Instruct",
-    "@cf/tinyllama/tinyllama-1.1b-chat-v1.0": "TinyLlama 1.1B Chat v1.0",
-    "@hf/google/gemma-7b-it": "Gemma 7B Instruct",
-    "@hf/meta-llama/meta-llama-3-8b-instruct": "Llama 3 8B Instruct",
-    "@hf/mistral/mistral-7b-instruct-v0.2": "Mistral 7B Instruct v0.2",
-    "@hf/nexusflow/starling-lm-7b-beta": "Starling LM 7B Beta",
-    "@hf/nousresearch/hermes-2-pro-mistral-7b": "Hermes 2 Pro Mistral 7B",
-    "@hf/thebloke/deepseek-coder-6.7b-base-awq": "Deepseek Coder 6.7B Base (AWQ)",
-    "@hf/thebloke/deepseek-coder-6.7b-instruct-awq": "Deepseek Coder 6.7B Instruct (AWQ)",
-    "@hf/thebloke/llama-2-13b-chat-awq": "Llama 2 13B Chat (AWQ)",
-    "@hf/thebloke/llamaguard-7b-awq": "LlamaGuard 7B (AWQ)",
-    "@hf/thebloke/mistral-7b-instruct-v0.1-awq": "Mistral 7B Instruct v0.1 (AWQ)",
-    "@hf/thebloke/neural-chat-7b-v3-1-awq": "Neural Chat 7B v3.1 (AWQ)",
-    "@hf/thebloke/openhermes-2.5-mistral-7b-awq": "OpenHermes 2.5 Mistral 7B (AWQ)",
-    "@hf/thebloke/zephyr-7b-beta-awq": "Zephyr 7B Beta (AWQ)",
-    "codellama-13b-instruct-hf": "CodeLlama 13B Instruct",
-    "distil-whisper-large-v3-en": "Distil Whisper Large v3",
-    "gemma-7b-it": "Gemma 7B Instruct (Deprecated)",
-    "gemma2-9b-it": "Gemma 2 9B Instruct",
-    "google/gemma-2-9b-it:free": "Gemma 2 9B Instruct",
-    "google/gemma-7b-it:free": "Gemma 7B Instruct",
-    "gryphe/mythomist-7b:free": "Mythomist 7B",
-    "huggingfaceh4/zephyr-7b-beta:free": "Zephyr 7B Beta",
-    "llama-2-13b-chat-hf": "Llama 2 13B Chat",
-    "llama-3-70b-instruct": "Llama 3 70B Instruct",
-    "llama-3-8b-instruct": "Llama 3 8B Instruct",
-    "llama-3.1-405b-reasoning": "Llama 3.1 405B",
-    "llama-3.1-70b-versatile": "Llama 3.1 70B",
-    "llama-3.1-8b-instant": "Llama 3.1 8B",
-    "llama-guard-3-8b": "Llama Guard 3 8B",
-    "llama3-70b-8192": "Llama 3 70B",
-    "llama3-8b-8192": "Llama 3 8B",
-    "llama3-groq-70b-8192-tool-use-preview": "Llama 3 70B - Groq Tool Use Preview",
-    "llama3-groq-8b-8192-tool-use-preview": "Llama 3 8B - Groq Tool Use Preview",
-    "meta-llama/llama-3-8b-instruct:free": "Llama 3 8B Instruct",
-    "meta-llama/llama-3.1-8b-instruct:free": "Llama 3.1 8B Instruct",
-    "meta-llama/meta-llama-3-70b-instruct": "Llama 3 70B Instruct",
-    "meta-llama/meta-llama-3.1-405b": "Llama 3.1 405B Base",
-    "meta-llama/meta-llama-3.1-405b-fp8": "Llama 3.1 405B Base (FP8)",
-    "meta-llama/meta-llama-3.1-405b-instruct": "Llama 3.1 405B Instruct",
-    "meta-llama/meta-llama-3.1-70b-instruct": "Llama 3.1 70B Instruct",
-    "meta-llama/meta-llama-3.1-8b-instruct": "Llama 3.1 8B Instruct",
-    "microsoft/phi-3-medium-128k-instruct:free": "Phi-3 Medium 128k Instruct",
-    "microsoft/phi-3-mini-128k-instruct:free": "Phi-3 Mini 128k Instruct",
-    "mistral-7b-instruct": "Mistral 7B Instruct",
-    "mistralai/mistral-7b-instruct:free": "Mistral 7B Instruct",
-    "mixtral-8x22b-instruct": "Mixtral 8x22B Instruct",
-    "mixtral-8x7b-32768": "Mixtral 8x7B",
-    "mixtral-8x7b-instruct": "Mixtral 8x7B Instruct",
-    "nousresearch/hermes-3-llama-3.1-70b": "Hermes 3 Llama 3.1 70B",
-    "nousresearch/nous-capybara-7b:free": "Nous Capybara 7B",
-    "openchat/openchat-7b:free": "OpenChat 7B",
-    "qwen/qwen-2-7b-instruct:free": "Qwen 2 7B Instruct",
-    "qwen/qwen2-72b-instruct": "Qwen 2 72B Instruct",
-    "undi95/toppy-m-7b:free": "Toppy M 7B",
-    "whisper-large-v3": "Whisper Large v3",
-    "whisper-large-v3-turbo": "Whisper Large v3 Turbo",
-    "01-ai/yi-34b-chat": "Yi 34B Chat",
-    "01-ai/yi-1.5-34b-chat": "Yi 1.5 34B Chat",
-    "nousresearch/hermes-3-llama-3.1-70b-fp8": "Hermes 3 Llama 3.1 70B (FP8)",
-    "nousresearch/hermes-3-llama-3.1-405b:free": "Hermes 3 Llama 3.1 405B",
-    "llava-v1.5-7b-4096-preview": "LLaVA 1.5 7B",
-    "mattshumer/reflection-llama-3.1-70b": "Reflection Llama 3.1 70B",
-    "mattshumer/reflection-70b:free": "Reflection Llama 3.1 70B",
-    "mattshumer/reflection-llama-3.1-70b-completions": "Reflection Llama 3.1 70B Completions",
-    "deepseek-ai/deepseek-v2.5": "DeepSeek V2.5",
-    "mistralai/pixtral-12b-2409": "Pixtral 12B (2409)",
-    "qwen/qwen2-vl-7b-instruct": "Qwen2-VL 7B Instruct",
-    "mistralai/pixtral-12b:free": "Pixtral 12B",
-    "qwen/qwen-2-vl-7b-instruct:free": "Qwen2-VL 7B Instruct",
-    "qwen/qwen2-vl-72b-instruct": "Qwen2-VL 72B Instruct",
-    "qwen/qwen2.5-72b-instruct": "Qwen2.5 72B Instruct",
-    "llama-3.2-90b-text-preview": "Llama 3.2 90B (Text Only)",
-    "llama-3.2-3b-preview": "Llama 3.2 3B",
-    "llama-3.2-11b-text-preview": "Llama 3.2 11B (Text Only)",
-    "llama-3.2-1b-preview": "Llama 3.2 1B",
-    "@cf/meta/llama-3.2-1b-instruct": "Llama 3.2 1B Instruct",
-    "meta-llama/llama-3.2-11b-vision-instruct:free": "Llama 3.2 11B Vision Instruct",
-    "@cf/meta/llama-3.2-11b-vision-instruct": "Llama 3.2 11B Vision Instruct",
-    "@cf/meta/llama-3.2-3b-instruct": "Llama 3.2 3B Instruct",
-    "meta-llama/llama-3.2-90b-vision-instruct": "Llama 3.2 90B Vision Instruct",
-    "meta-llama/llama-3.2-3b-instruct": "Llama 3.2 3B Instruct",
-    "llama-3.2-11b-vision-preview": "Llama 3.2 11B Vision",
-    "llama-3.2-90b-vision-preview": "Llama 3.2 90B Vision",
-    "meta-llama/llama-3.2-90b-vision": "Llama 3.2 90B Vision",
-    "meta-llama/llama-3.1-70b-instruct:free": "Llama 3.1 70B Instruct",
-    "meta-llama/llama-3.2-1b-instruct:free": "Llama 3.2 1B Instruct",
-    "liquid/lfm-40b:free": "Liquid LFM 40B",
-    "meta-llama/llama-3.2-3b-instruct:free": "Llama 3.2 3B Instruct",
-    "meta-llama/llama-3.1-405b-instruct:free": "Llama 3.1 405B Instruct",
-    "mathstral-7b-v0.1": "Mathstral 7B v0.1",
-    "llama-3.1-70b-instruct": "Llama 3.1 70B Instruct",
-    "gryphe/mythomax-l2-13b:free": "Mythomax L2 13B",
-    "meta-llama/llama-3.2-90b-vision-instruct:free": "Llama 3.2 90B Vision Instruct",
-    "mamba-codestral-7b-v0-1": "Codestral Mamba 7B v0.1",
-    "hermes3-70b": "Hermes 3 70B",
-    "llama3.1-nemotron-70b-instruct": "Llama 3.1 Nemotron 70B Instruct",
-    "llama3.2-3b-instruct": "Llama 3.2 3B Instruct",
-    "llama3.1-8b-instruct": "Llama 3.1 8B Instruct",
-    "llama3.1-70b-instruct-fp8": "Llama 3.1 70B Instruct (FP8)",
-    "llama3.1-405b-instruct-fp8": "Llama 3.1 405B Instruct (FP8)",
-    "hermes3-405b": "Hermes 3 405B",
-    "deepseek-coder-v2-lite-instruct": "DeepSeek Coder v2 Lite Instruct",
-    "hermes3-8b": "Hermes 3 8B",
-    "dracarys2-72b-instruct": "Dracarys 2 72B Instruct",
-    "lfm-40b": "Liquid LFM 40B",
-    "qwen/qwen2.5-coder-32b-instruct": "Qwen2.5 Coder 32B Instruct",
-    "thedrummer/unslopnemo-12b:free": "UnslopNemo 12B",
-    "mistral-nemo-instruct-2407": "Mistral Nemo 2407",
-    "google/gemini-exp-1121:free": "Gemini Experimental 1121",
-    "meta-llama/llama-3.1-70b-instruct-fp8": "Llama 3.1 70B Instruct (FP8)",
-    "google/learnlm-1.5-pro-experimental:free": "LearnLM 1.5 Pro Experimental",
-    "google/gemini-exp-1114:free": "Gemini Experimental 1114",
-    "qwen25-coder-32b-instruct": "Qwen2.5 Coder 32B Instruct",
-    "qwen/qwq-32b-preview": "Qwen QwQ 32B Preview",
-    "meta-llama/llama-3.3-70b-instruct": "Llama 3.3 70B Instruct",
-    "llama-3.3-70b-versatile": "Llama 3.3 70B",
-    "google/gemini-exp-1206:free": "Gemini Experimental 1206",
-    "llama3.1-nemotron-70b-instruct-fp8": "Llama 3.1 Nemotron 70B Instruct (FP8)",
-    "llama-3.3-70b-specdec": "Llama 3.3 70B (Speculative Decoding)",
-    "@cf/meta/llama-3.3-70b-instruct-fp8-fast": "Llama 3.3 70B Instruct (FP8)",
-    "google/gemini-2.0-flash-exp:free": "Gemini 2.0 Flash Experimental",
-    "qwen2.5-coder-32b-instruct": "Qwen2.5 Coder 32B Instruct",
-    "bge-multilingual-gemma2": "BGE-Multilingual-Gemma2",
-    "pixtral-12b-2409": "Pixtral 12B (2409)",
-    "google/gemini-2.0-flash-thinking-exp:free": "Gemini 2.0 Flash Thinking Experimental",
-    "sentence-t5-xxl": "sentence-t5-xxl",
-    "meta-llama/meta-llama-3.1-405b-instruct-virtuals": "Llama 3.1 405B Instruct Virtuals",
-    "llama-3.1-8b-instruct": "Llama 3.1 8B Instruct",
-    "deepseek-ai/deepseek-v3": "DeepSeek V3",
-    "llava-next-mistral-7b": "Llava Next Mistral 7B",
-    "llama-3.3-70b-instruct": "Llama 3.3 70B Instruct",
-    "google/gemini-2.0-flash-thinking-exp-1219:free": "Gemini 2.0 Flash Thinking Experimental 1219",
-    "sophosympatheia/rogue-rose-103b-v0.2:free": "Rogue Rose 103B v0.2",
-    "deepseek-ai/deepseek-r1": "DeepSeek R1",
-    "deepseek-ai/deepseek-r1-zero": "DeepSeek R1-Zero",
-    "deepseek/deepseek-r1:free": "DeepSeek R1",
-    "deepseek-r1-distill-llama-70b": "DeepSeek R1 Distill Llama 70B",
-    "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b": "DeepSeek R1 Distill Qwen 32B",
-    "deepseek-ai/janus-pro-7b": "DeepSeek Janus Pro 7B",
-    "deepseek-r1-distill-llama-8b": "DeepSeek R1 Distill Llama 8B",
-    "nvidia/llama-3.1-nemotron-70b-instruct:free": "Llama 3.1 Nemotron 70B Instruct",
-    "deepseek/deepseek-r1-distill-llama-70b:free": "DeepSeek R1 Distill Llama 70B",
-    "qwen/qwen2.5-vl-72b-instruct:free": "Qwen2.5 VL 72B Instruct",
-    "google/gemini-2.0-flash-lite-preview-02-05:free": "Gemini 2.0 Flash Lite Preview 02-05",
-    "qwen/qwen-vl-plus:free": "Qwen VL Plus",
-    "google/gemini-2.0-pro-exp-02-05:free": "Gemini 2.0 Pro Experimental 02-05",
-    "deepseek-r1": "DeepSeek R1",
-    "meta-llama/llama-3.3-70b-instruct:free": "Llama 3.3 70B Instruct",
-    "deepseek/deepseek-chat:free": "DeepSeek V3",
-    "deepseek-r1-distill-qwen-32b": "DeepSeek R1 Distill Qwen 32B",
-    "mistralai/mistral-nemo:free": "Mistral Nemo",
-    "allam-2-7b": "Allam 2 7B",
-    "mistralai/mistral-small-24b-instruct-2501:free": "Mistral Small 24B Instruct 2501",
-    "qwen-2.5-32b": "Qwen 2.5 32B",
-    "cognitivecomputations/dolphin3.0-r1-mistral-24b:free": "Dolphin 3.0 R1 Mistral 24B",
-    "qwen-2.5-coder-32b": "Qwen 2.5 Coder 32B",
-    "cognitivecomputations/dolphin3.0-mistral-24b:free": "Dolphin 3.0 Mistral 24B",
-    "deepseek-r1-671b": "DeepSeek R1",
-    "@cf/meta/llama-guard-3-8b": "Llama Guard 3 8B",
-    "mistral-saba-24b": "Mistral Saba 24B",
-    "deepseek/deepseek-r1-zero:free": "DeepSeek R1 Zero",
-    "nousresearch/deephermes-3-llama-3-8b-preview:free": "DeepHermes 3 Llama 3 8B Preview",
-    "qwen-qwq-32b": "Qwen QwQ 32B",
-    "qwen/qwq-32b": "Qwen QwQ 32B",
-    "qwen/qwq-32b:free": "Qwen QwQ 32B",
-    "qwen/qwen2.5-vl-7b-instruct": "Qwen2.5 VL 7B Instruct",
-    "qwen/qwen-2.5-coder-32b-instruct:free": "Qwen2.5 Coder 32B Instruct",
-    "mistral-7b-instruct-v0.3": "Mistral 7B Instruct v0.3",
-    "moonshotai/moonlight-16b-a3b-instruct:free": "Moonlight-16B-A3B-Instruct",
-    "google/gemma-3-27b-it:free": "Gemma 3 27B Instruct",
-    "qwen/qwen-2.5-72b-instruct:free": "Qwen 2.5 72B Instruct",
-    "rekaai/reka-flash-3:free": "Reka Flash 3",
-    "deepseek/deepseek-r1-distill-qwen-32b:free": "DeepSeek R1 Distill Qwen 32B",
-    "deepseek/deepseek-r1-distill-qwen-14b:free": "DeepSeek R1 Distill Qwen 14B",
-    "qwen/qwen2.5-vl-72b-instruct": "Qwen2.5 VL 72B Instruct",
-    "qwen/qwq-32b-preview:free": "Qwen QwQ 32B Preview",
-    "google/gemma-3-12b-it:free": "Gemma 3 12B Instruct",
-    "google/gemma-3-1b-it:free": "Gemma 3 1B Instruct",
-    "google/gemma-3-4b-it:free": "Gemma 3 4B Instruct",
-    "open-r1/olympiccoder-32b:free": "OlympicCoder 32B",
-    "open-r1/olympiccoder-7b:free": "OlympicCoder 7B",
-}
 
 
 def create_logger(provider_name):
@@ -240,33 +40,6 @@ def create_logger(provider_name):
 
 
 MISSING_MODELS = set()
-
-HYPERBOLIC_IGNORED_MODELS = {
-    "Wifhat",
-    "FLUX.1-dev",
-    "StableDiffusion",
-    "Monad",
-    "TTS",
-    "deepseek-ai/Janus-Pro-7B",
-    "test",
-    # Ignore DeepSeek R1 and R1-Zero because they are not available in the free tier.
-    "deepseek-ai/DeepSeek-R1",
-    "deepseek-ai/DeepSeek-R1-Zero",
-}
-
-LAMBDA_IGNORED_MODELS = {"lfm-40b-vllm", "hermes3-405b-fp8-128k"}
-
-OPENROUTER_IGNORED_MODELS = {
-    "google/gemini-exp-1121:free",
-    "google/learnlm-1.5-pro-experimental:free",
-    "google/gemini-exp-1114:free",
-    "google/gemini-exp-1206:free",
-    "google/gemini-2.0-flash-exp:free",
-    "google/gemini-2.0-flash-thinking-exp:free",
-    "google/gemini-2.0-flash-thinking-exp-1219:free",
-    "google/gemini-flash-1.5-exp:free",
-    "google/gemini-2.0-pro-exp-02-05:free",
-}  # Ignore gemini experimental free models because rate limits mean they are unusable.
 
 
 def get_model_name(id):
@@ -303,6 +76,8 @@ def get_groq_limits_for_stt_model(model_id, logger):
 def get_groq_limits_for_model(model_id, script_dir, logger):
     if "whisper" in model_id:
         return get_groq_limits_for_stt_model(model_id, logger)
+    if "tts" in model_id:
+        return None
     logger.info(f"Getting limits for chat model {model_id}...")
     r = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
@@ -352,6 +127,8 @@ def fetch_groq_models(logger):
 
         for model, future in futures:
             limits = future.result()
+            if limits is None:
+                continue
             ret_models.append(
                 {
                     "id": model["id"],
@@ -392,7 +169,7 @@ def fetch_openrouter_models(logger):
                 "name": get_model_name(model["id"]),
                 "limits": {
                     "requests/minute": 20,
-                    "requests/day": 200,
+                    "requests/day": 50,
                 },
             }
         )
@@ -464,99 +241,6 @@ def fetch_ovh_models(logger):
 
 
 def fetch_hyperbolic_models(logger):
-    logger.info("Fetching Hyperbolic models...")
-    firestore_models = fetch_hyperbolic_models_firestore(logger)
-    api_models = fetch_hyperbolic_models_api(logger)
-    for model in api_models:
-        if model["id"] not in [m["id"] for m in firestore_models]:
-            logger.debug(f"Adding model {model['id']} from API")
-            firestore_models.append(model)
-    for model in firestore_models:
-        if model["id"] not in [m["id"] for m in api_models]:
-            logger.warning(f"Model {model['id']} from Firestore not in API")
-    return sorted(firestore_models, key=lambda x: x["name"])
-
-
-def fetch_hyperbolic_models_firestore(logger):
-    logger.info("Fetching Hyperbolic models from Firestore...")
-
-    r = requests.post(
-        "https://firestore.googleapis.com/v1/projects/ai-dashboard-cfd6a/databases/(default)/documents:runQuery",
-        headers={
-            "accept": "*/*",
-            "accept-language": "en-GB,en-US;q=0.9,en;q=0.8",
-            "content-type": "text/plain",
-            "dnt": "1",
-            "google-cloud-resource-prefix": "projects/ai-dashboard-cfd6a/databases/(default)",
-            "origin": "https://app.hyperbolic.xyz",
-            "priority": "u=1, i",
-            "referer": "https://app.hyperbolic.xyz/",
-            "sec-ch-ua": '"Not)A;Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"macOS"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "cross-site",
-            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
-            "x-goog-api-client": "gl-js/ fire/10.10.0_lite",
-            "x-goog-request-params": "project_id=ai-dashboard-cfd6a",
-        },
-        json={
-            "structuredQuery": {
-                "from": [{"collectionId": "models"}],
-                "where": {
-                    "compositeFilter": {
-                        "op": "AND",
-                        "filters": [
-                            {
-                                "fieldFilter": {
-                                    "field": {"fieldPath": "type"},
-                                    "op": "IN",
-                                    "value": {
-                                        "arrayValue": {
-                                            "values": [
-                                                {"stringValue": "llm"},
-                                                # {"stringValue": "vlm"},
-                                            ]
-                                        }
-                                    },
-                                },
-                            },
-                            # {
-                            #     "fieldFilter": {
-                            #         "field": {"fieldPath": "hidden"},
-                            #         "op": "NOT_EQUAL",
-                            #         "value": {"booleanValue": True},
-                            #     },
-                            # },
-                        ],
-                    },
-                },
-            }
-        },
-    )
-    r.raise_for_status()
-    models = r.json()
-    logger.info(f"Fetched {len(models)} models from Hyperbolic's Firestore")
-    ret_models = []
-    for model in models:
-        model_data = model["document"]["fields"]
-        if "hidden" in model_data and model_data["hidden"]["booleanValue"]:
-            continue
-        ret_models.append(
-            {
-                "id": model_data["model"]["stringValue"],
-                "name": get_model_name(model_data["model"]["stringValue"]),
-                "limits": {
-                    "requests/minute": 60,
-                },
-            }
-        )
-    logger.debug(json.dumps(ret_models, indent=4))
-    return ret_models
-
-
-def fetch_hyperbolic_models_api(logger):
     logger.info("Fetching Hyperbolic models from API...")
     r = requests.get(
         "https://api.hyperbolic.xyz/v1/models",
@@ -583,7 +267,7 @@ def fetch_hyperbolic_models_api(logger):
             }
         )
     logger.debug(json.dumps(ret_models, indent=4))
-    return ret_models
+    return sorted(ret_models, key=lambda x: x["name"])
 
 
 def fetch_github_models(logger):
@@ -729,64 +413,63 @@ def fetch_scaleway_models(logger):
             }
         )
     ret_models = sorted(ret_models, key=lambda x: x["name"])
-    logger.info("Fetching Scaleway rate limits")
-    r = requests.get(
-        "https://www.scaleway.com/en/docs/generative-apis/reference-content/rate-limits/"
-    )
-    r.raise_for_status()
-    # Extract <main> content
-    soup = BeautifulSoup(r.text, "html.parser")
-    body = str(soup.find("main"))
-    prompt = f"""
-Here is the web page to extract data from:
-```html
-{body}
-```
-    """
-    logger.info("Extracting model rate limits from the provided web page...")
-    chat_response = rate_limited_mistral_chat(
-        mistral_client,
-        model="mistral-large-latest",
-        messages=[
-            {
-                "role": "system",
-                "content": """Extract the model rate limits as only integers from the provided web page into JSON of the following format:
-```json
-{
-  "model name here": {
-    "requests/minute": 10,
-    "tokens/minute": 100
-  }
-}
-```
-ONLY OUTPUT JSON!""",
-            },
-            {
-                "role": "user",
-                "content": prompt,
-            },
-        ],
-        response_format={
-            "type": "json_object",
-        },
-        temperature=0,
-    )
-    logger.info(chat_response.choices[0].message.content)
-    extracted_data = json.loads(chat_response.choices[0].message.content)
-    for model in extracted_data:
-        for m in ret_models:
-            if m["id"] == model:
-                m["limits"] = extracted_data[model]
-                break
-
     return ret_models
 
 
-def get_human_limits(model):
+def fetch_chutes_models(logger):
+    logger.info("Fetching Chutes models...")
+    r = requests.get(
+        "https://api.chutes.ai/chutes/?include_public=true&limit=1000",
+        headers={
+            "Content-Type": "application/json",
+        },
+    )
+    r.raise_for_status()
+    models = r.json()["items"]
+    logger.info(f"Fetched {len(models)} models from Chutes")
+
+    # Filter for free models based on per_million_token price
+    free_models = []
+    for model in models:
+        price_info = model.get("current_estimated_price", {})
+        # Check if per_million_tokens field exists and is set to 0 for USD
+        if price_info.get("per_million_tokens", {}).get("usd", 1) == 0:
+            model_name = model.get("name", "Unknown model")
+            free_models.append(
+                {
+                    "id": model_name,
+                    "name": get_model_name(model_name),
+                    "description": model.get("tagline", ""),
+                }
+            )
+
+    logger.info(f"Found {len(free_models)} free models from Chutes")
+    return sorted(free_models, key=lambda x: x["name"])
+
+
+def get_human_limits(model, seperator="<br>"):
     if "limits" not in model:
         return ""
     limits = model["limits"]
-    return "<br>".join([f"{value:,} {key}" for key, value in limits.items()])
+    return seperator.join([f"{value:,} {key}" for key, value in limits.items()])
+
+
+def generate_toc(markdown):
+    toc_lines = []
+    # Find all ## and ### headings, but skip the main title (# ...)
+    headings = re.findall(r"^(#{2,3}) +(.+)", markdown, re.MULTILINE)
+    for hashes, title in headings:
+        # Remove markdown links for anchor text, keep display text
+        display = re.sub(r"\[(.*?)\]\([^)]*\)", r"\1", title)
+        # Build anchor (GitHub style)
+        anchor = display.lower()
+        anchor = re.sub(r"[^a-z0-9 \-_]", "", anchor)
+        anchor = anchor.replace(" ", "-")
+        anchor = anchor.replace("--", "-")
+        anchor = anchor.strip("-")
+        indent = "  " if len(hashes) == 3 else ""
+        toc_lines.append(f"{indent}- [{display}](#{anchor})")
+    return "\n".join(toc_lines)
 
 
 def main():
@@ -801,6 +484,7 @@ def main():
     # lambda_logger = create_logger("Lambda Labs")
     samba_logger = create_logger("SambaNova")
     scaleway_logger = create_logger("Scaleway")
+    chutes_logger = create_logger("Chutes")
 
     fetch_concurrently = os.getenv("FETCH_CONCURRENTLY", "false").lower() == "true"
 
@@ -815,6 +499,7 @@ def main():
                 executor.submit(fetch_github_models, github_logger),
                 executor.submit(fetch_samba_models, samba_logger),
                 executor.submit(fetch_scaleway_models, scaleway_logger),
+                executor.submit(fetch_chutes_models, chutes_logger),
             ]
             (
                 gemini_models,
@@ -825,6 +510,7 @@ def main():
                 github_models,
                 samba_models,
                 scaleway_models,
+                chutes_models,
             ) = [f.result() for f in futures]
 
             # Fetch groq models after others complete
@@ -839,269 +525,501 @@ def main():
         # lambda_models = fetch_lambda_models(lambda_logger)
         samba_models = fetch_samba_models(samba_logger)
         scaleway_models = fetch_scaleway_models(scaleway_logger)
+        chutes_models = fetch_chutes_models(chutes_logger)
         groq_models = fetch_groq_models(groq_logger)
 
-    table = """<table>
-    <thead>
-        <tr>
-            <th>Provider</th>
-            <th>Provider Limits/Notes</th>
-            <th>Model Name</th>
-            <th>Model Limits</th>
-        </tr>
-    </thead>
-    <tbody>
-"""
+    # Initialize markdown string for free providers
+    model_list_markdown = ""
 
-    for idx, model in enumerate(openrouter_models):
-        table += "<tr>"
-
-        if idx == 0:
-            table += f'<td rowspan="{len(openrouter_models)}">'
-            table += '<a href="https://openrouter.ai" target="_blank">OpenRouter</a>'
-            table += "</td>"
-            table += (
-                f'<td rowspan="{len(openrouter_models)}">{get_human_limits(model)}</td>'
+    # --- OpenRouter ---
+    model_list_markdown += "### [OpenRouter](https://openrouter.ai)\n\n"
+    if openrouter_models:
+        provider_limits = get_human_limits(
+            openrouter_models[0]
+        ) 
+        model_list_markdown += "**Limits:**\n\n"
+        model_list_markdown += f"[{provider_limits}<br>1000 requests/day with $10 credit balance](https://openrouter.ai/docs/api-reference/limits)\n\n"
+        model_list_markdown += "Models share a common quota.\n\n"
+        for model in openrouter_models:
+            model_list_markdown += (
+                f"- [{model['name']}](https://openrouter.ai/{model['id']})\n"
             )
+    model_list_markdown += "\n"
 
-        table += f"<td>{model['name']}</td>"
-        table += "<td></td>"
-        table += "</tr>\n"
+    # --- Google AI Studio ---
+    model_list_markdown += "### [Google AI Studio](https://aistudio.google.com)\n\n"
+    model_list_markdown += (
+        "Data is used for training when used outside of the UK/CH/EEA/EU.\n\n"
+    )
+    model_list_markdown += "<table><thead><tr><th>Model Name</th><th>Model Limits</th></tr></thead><tbody>\n"
 
-    table += f"""<tr>
-            <td rowspan="11"><a href="https://aistudio.google.com" target="_blank">Google AI Studio</a></td>
-            <td rowspan="11">Data is used for training (when used outside of the UK/CH/EEA/EU).</td>
-            <td>Gemini 2.0 Flash</td>
-            <td>{get_human_limits({"limits": gemini_models["gemini-2.0-flash"]})}</td>
-        </tr>
-        <tr>
-            <td>Gemini 2.0 Flash-Lite</td>
-            <td>{get_human_limits({"limits": gemini_models["gemini-2.0-flash-lite"]})}</td>
-        </tr>
-        <tr>
-            <td>Gemini 2.0 Flash (Experimental)</td>
-            <td>{get_human_limits({"limits": gemini_models["gemini-2.0-flash-exp"]})}</td>
-        </tr>
-        <tr>
-            <td>Gemini 2.0 Pro (Experimental)</td>
-            <td>{get_human_limits({"limits": gemini_models["gemini-2.0-pro-exp"]})}</td>
-        </tr>
-        <tr>
-            <td>Gemini 1.5 Flash</td>
-            <td>{get_human_limits({"limits": gemini_models["gemini-1.5-flash"]})}</td>
-        </tr>
-        <tr>
-            <td>Gemini 1.5 Flash-8B</td>
-            <td>{get_human_limits({"limits": gemini_models["gemini-1.5-flash-8b"]})}</td>
-        </tr>
-        <tr>
-            <td>Gemini 1.5 Pro</td>
-            <td>{get_human_limits({"limits": gemini_models["gemini-1.5-pro"]})}</td>
-        </tr>
-        <tr>
-            <td>LearnLM 1.5 Pro (Experimental)</td>
-            <td>{get_human_limits({"limits": gemini_models["learnlm-1.5-pro-experimental"]})}</td>
-        </tr>
-        <tr>
-            <td>Gemma 3 27B Instruct</td>
-            <td>{get_human_limits({"limits": gemini_models["gemma-3-27b"]})}</td>
-        </tr>
-        <tr>
-            <td>text-embedding-004</td>
-            <td rowspan="2">{get_human_limits({"limits": gemini_models["project-embedding"]})}<br>100 content/batch</td>
-        </tr>
-        <tr>
-            <td>embedding-001</td>
-        </tr>"""
+    gemini_text_models = [
+        {
+            "id": "gemini-2.5-pro-exp-03-25",
+            "name": "Gemini 2.5 Pro (Experimental)",
+            "limits": gemini_models.get("gemini-2.0-pro-exp", {}),
+        },
+        {
+            "id": "gemini-2.5-flash-preview-04-17",
+            "name": "Gemini 2.5 Flash (Preview)",
+            "limits": gemini_models.get("gemini-2.5-flash", {}),
+        },
+        {
+            "id": "gemini-2.0-flash",
+            "name": "Gemini 2.0 Flash",
+            "limits": gemini_models.get("gemini-2.0-flash", {}),
+        },
+        {
+            "id": "gemini-2.0-flash-lite",
+            "name": "Gemini 2.0 Flash-Lite",
+            "limits": gemini_models.get("gemini-2.0-flash-lite", {}),
+        },
+        {
+            "id": "gemini-2.0-flash-exp",
+            "name": "Gemini 2.0 Flash (Experimental)",
+            "limits": gemini_models.get("gemini-2.0-flash-exp", {}),
+        },
+        {
+            "id": "gemini-1.5-flash",
+            "name": "Gemini 1.5 Flash",
+            "limits": gemini_models.get("gemini-1.5-flash", {}),
+        },
+        {
+            "id": "gemini-1.5-flash-8b",
+            "name": "Gemini 1.5 Flash-8B",
+            "limits": gemini_models.get("gemini-1.5-flash-8b", {}),
+        },
+        {
+            "id": "gemini-1.5-pro",
+            "name": "Gemini 1.5 Pro",
+            "limits": gemini_models.get("gemini-1.5-pro", {}),
+        },
+        {
+            "id": "learnlm-1.5-pro-experimental",
+            "name": "LearnLM 1.5 Pro (Experimental)",
+            "limits": gemini_models.get("learnlm-1.5-pro-experimental", {}),
+        },
+        {
+            "id": "gemma-3-27b-it",
+            "name": "Gemma 3 27B Instruct",
+            "limits": gemini_models.get("gemma-3-27b", {}),
+        },
+        {
+            "id": "gemma-3-12b-it",
+            "name": "Gemma 3 12B Instruct",
+            "limits": gemini_models.get("gemma-3-12b", {}),
+        },
+        {
+            "id": "gemma-3-4b-it",
+            "name": "Gemma 3 4B Instruct",
+            "limits": gemini_models.get("gemma-3-4b", {}),
+        },
+        {
+            "id": "gemma-3-1b-it",
+            "name": "Gemma 3 1B Instruct",
+            "limits": gemini_models.get("gemma-3-1b", {}),
+        },
+    ]
+    gemini_embedding_models = [
+        {
+            "id": "text-embedding-004",
+            "name": "text-embedding-004",
+            "limits": gemini_models.get("project-embedding", {}),
+        },
+        {
+            "id": "embedding-001",
+            "name": "embedding-001",
+            "limits": gemini_models.get("project-embedding", {}),
+        },
+    ]
 
-    table += """<tr>
-        <td><a href="https://console.mistral.ai/" target="_blank">Mistral (La Plateforme)</a></td>
-        <td>Free tier (Experiment plan) requires opting into data training, requires phone number verification.</td>
-        <td>Open and Proprietary Mistral models</td>
-        <td>1 request/second<br>500,000 tokens/minute<br>1,000,000,000 tokens/month</td>
-    </tr>"""
-
-    table += """<tr>
-        <td><a href="https://codestral.mistral.ai/" target="_blank">Mistral (Codestral)</a></td>
-        <td>Currently free to use, monthly subscription based, requires phone number verification.</td>
-        <td>Codestral</td>
-        <td>30 requests/minute<br>2,000 requests/day</td>
-    </tr>"""
-
-    table += """<tr>
-            <td><a href="https://huggingface.co/docs/api-inference/en/index" target="_blank">HuggingFace Serverless Inference</a></td>
-            <td>Limited to models smaller than 10GB.<br>Some popular models are supported even if they exceed 10GB.</td>
-            <td>Various open models</td>
-            <td><a href="https://huggingface.co/docs/api-inference/pricing" target="_blank">Variable credits per month, currently $0.10</a></td>
-        </tr>"""
-
-    table += """<tr>
-        <td rowspan="2"><a href="https://cloud.cerebras.ai/" target="_blank">Cerebras</a></td>
-        <td rowspan="2">Free tier restricted to 8K context</td>
-        <td>Llama 3.1 8B</td>
-        <td>30 requests/minute<br>60,000 tokens/minute<br>900 requests/hour<br>1,000,000 tokens/hour<br>14,400 requests/day<br>1,000,000 tokens/day</td>
-    </tr>
-    <tr>
-        <td>Llama 3.3 70B</td>
-        <td>30 requests/minute<br>60,000 tokens/minute<br>900 requests/hour<br>1,000,000 tokens/hour<br>14,400 requests/day<br>1,000,000 tokens/day</td>
-    </tr>"""
-
-    for idx, model in enumerate(groq_models):
-        table += "<tr>"
-
-        if idx == 0:
-            table += f'<td rowspan="{len(groq_models)}">'
-            table += '<a href="https://console.groq.com" target="_blank">Groq</a>'
-            table += "</td>"
-            table += f'<td rowspan="{len(groq_models)}"></td>'
-
-        table += f"<td>{model['name']}</td>"
-        table += f"<td>{get_human_limits(model)}</td>"
-        table += "</tr>\n"
-
-    for idx, model in enumerate(ovh_models):
-        table += "<tr>"
-        if idx == 0:
-            table += '<td rowspan="' + str(len(ovh_models)) + '">'
-            table += '<a href="https://endpoints.ai.cloud.ovh.net/" target="_blank">OVH AI Endpoints (Free Beta)</a>'
-            table += "</td>"
-            table += '<td rowspan="' + str(len(ovh_models)) + '"></td>'
-        table += f"<td>{model['name']}</td>"
-        table += f"<td>{get_human_limits(model)}</td>"
-        table += "</tr>\n"
-
-    table += """<tr>
-        <td rowspan="3"><a href="https://together.ai">Together</a></td>
-        <td rowspan="3"></td>
-        <td>Llama 3.2 11B Vision Instruct</td>
-        <td></td>
-    </tr>
-    <tr>
-        <td>Llama 3.3 70B Instruct</td>
-        <td></td>
-    </tr>
-    <tr>
-        <td>DeepSeek R1 Distil Llama 70B</td>
-        <td></td>
-    </tr>"""
-
-    table += """<tr>
-            <td rowspan="3"><a href="https://cohere.com" target="_blank">Cohere</a></td>
-            <td rowspan="3"><a href="https://docs.cohere.com/docs/rate-limits">20 requests/min<br>1,000 requests/month</a></td>
-            <td>Command-R</td>
-            <td rowspan="3">Shared Limit</td>
-        </tr>
-        <tr>
-            <td>Command-R+</td>
-        </tr>
-        <tr>
-            <td>Command-A</td>
-        </tr>"""
-
-    for idx, model in enumerate(github_models):
-        table += "<tr>"
-        table += (
-            f'<td rowspan="{len(github_models)}"><a href="https://github.com/marketplace/models" target="_blank">GitHub Models</a></td>'
-            if idx == 0
-            else ""
+    # Write text models to table
+    for model in gemini_text_models:
+        limits_str = get_human_limits(model)
+        model_list_markdown += (
+            f"<tr><td>{model['name']}</td><td>{limits_str}</td></tr>\n"
         )
-        table += (
-            f'<td rowspan="{len(github_models)}">Extremely restrictive input/output token limits.<br><a href="https://docs.github.com/en/github-models/prototyping-with-ai-models#rate-limits" target="_blank">Rate limits dependent on Copilot subscription tier (Free/Pro/Business/Enterprise)</a></td>'
-            if idx == 0
-            else ""
+
+    # Write embedding models to table
+    first_embedding = True
+    for model in gemini_embedding_models:
+        limits_str = get_human_limits(model)
+        model_list_markdown += f"<tr><td>{model['name']}</td>"
+        if first_embedding:
+            model_list_markdown += f'<td rowspan="{len(gemini_embedding_models)}">{limits_str}<br>100 content/batch<br>Shared Quota</td>'
+            first_embedding = False
+        model_list_markdown += "</tr>\n"
+
+    model_list_markdown += "</tbody></table>\n\n"
+
+    # --- NVIDIA NIM ---
+    model_list_markdown += (
+        "### [NVIDIA NIM](https://build.nvidia.com/explore/discover)\n\n"
+    )
+    model_list_markdown += "Phone number verification required.\n"
+    model_list_markdown += "Models tend to be context window limited.\n\n"
+    model_list_markdown += "**Limits:** 40 requests/minute\n\n"
+    model_list_markdown += "- [Various open models](https://build.nvidia.com/models)\n"
+    model_list_markdown += "\n"
+
+    # --- Mistral (La Plateforme) ---
+    model_list_markdown += (
+        "### [Mistral (La Plateforme)](https://console.mistral.ai/)\n\n"
+    )
+    model_list_markdown += "* Free tier (Experiment plan) requires opting into data training\n"
+    model_list_markdown += "* Requires phone number verification.\n\n"
+    model_list_markdown += "**Limits (per-model):** 1 request/second, 500,000 tokens/minute, 1,000,000,000 tokens/month\n\n"
+    model_list_markdown += "- [Open and Proprietary Mistral models](https://docs.mistral.ai/getting-started/models/models_overview/)\n"
+    model_list_markdown += "\n"
+
+    # --- Mistral (Codestral) ---
+    model_list_markdown += (
+        "### [Mistral (Codestral)](https://codestral.mistral.ai/)\n\n"
+    )
+    model_list_markdown += "* Currently free to use\n"
+    model_list_markdown += "* Monthly subscription based\n"
+    model_list_markdown += "* Requires phone number verification\n\n"
+    model_list_markdown += "**Limits:** 30 requests/minute, 2,000 requests/day\n\n"
+    model_list_markdown += "- Codestral\n"
+    model_list_markdown += "\n"
+
+    # --- HuggingFace Serverless Inference ---
+    model_list_markdown += "### [HuggingFace Inference Providers](https://huggingface.co/docs/inference-providers/en/index)\n\n"
+    model_list_markdown += "HuggingFace Serverless Inference limited to models smaller than 10GB. Some popular models are supported even if they exceed 10GB.\n\n"
+    model_list_markdown += "**Limits:** [$0.10/month in credits](https://huggingface.co/docs/inference-providers/en/pricing)\n\n"
+    model_list_markdown += "- Various open models across supported providers\n"
+    model_list_markdown += "\n"
+
+    # --- Cerebras ---
+    model_list_markdown += "### [Cerebras](https://cloud.cerebras.ai/)\n\n"
+    model_list_markdown += "Free tier restricted to 8K context.\n\n"
+    model_list_markdown += "<table><thead><tr><th>Model Name</th><th>Model Limits</th></tr></thead><tbody>\n"
+    cerebras_limit_text = "30 requests/minute<br>60,000 tokens/minute<br>900 requests/hour<br>1,000,000 tokens/hour<br>14,400 requests/day<br>1,000,000 tokens/day"
+    cerebras_models = [
+        {"name": "Llama 4 Scout", "limits_text": cerebras_limit_text},
+        {"name": "Llama 3.1 8B", "limits_text": cerebras_limit_text},
+        {"name": "Llama 3.3 70B", "limits_text": cerebras_limit_text},
+    ]
+    for model in cerebras_models:
+        model_list_markdown += (
+            f"<tr><td>{model['name']}</td><td>{model['limits_text']}</td></tr>\n"
         )
-        table += f"<td>{model['name']}</td>"
-        table += "<td></td>"
-        table += "</tr>\n"
+    model_list_markdown += "</tbody></table>\n\n"
 
-    table += """<tr>
-        <td><a href="https://chutes.ai/">Chutes</a></td>
-        <td>Distributed, decentralized crypto-based compute. Data is sent to individual hosts.</td>
-        <td>Various open models</td>
-        <td></td>
-    </tr>"""
-
-    for idx, model in enumerate(cloudflare_models):
-        table += "<tr>"
-        if idx == 0:
-            table += '<td rowspan="' + str(len(cloudflare_models)) + '">'
-            table += '<a href="https://developers.cloudflare.com/workers-ai" target="_blank">Cloudflare Workers AI</a>'
-            table += "</td>"
-            table += '<td rowspan="' + str(len(cloudflare_models)) + '">'
-            table += '<a href="https://developers.cloudflare.com/workers-ai/platform/pricing/#free-allocation">10,000 neurons/day</a>'
-            table += "</td>"
-        table += f"<td>{model['name']}</td>"
-        table += "<td></td>"
-        table += "</tr>\n"
-
-    table += """<tr>
-        <td rowspan="7"><a href="https://console.cloud.google.com/vertex-ai/publishers/meta/model-garden" target="_blank">Google Cloud Vertex AI</a></td>
-        <td rowspan="7">Very stringent payment verification for Google Cloud.</td>
-        <td><a href="https://console.cloud.google.com/vertex-ai/publishers/meta/model-garden/llama-3.1-405b-instruct-maas" target="_blank">Llama 3.1 70B Instruct</a></td>
-        <td>Llama 3.1 API Service free during preview.<br>60 requests/minute</td>
-    </tr>
-    <tr>
-        <td><a href="https://console.cloud.google.com/vertex-ai/publishers/meta/model-garden/llama-3.1-405b-instruct-maas" target="_blank">Llama 3.1 8B Instruct</a></td>
-        <td>Llama 3.1 API Service free during preview.<br>60 requests/minute</td>
-    </tr>
-    <tr>
-        <td><a href="https://console.cloud.google.com/vertex-ai/publishers/meta/model-garden/llama-3.2-90b-vision-instruct-maas" target="_blank">Llama 3.2 90B Vision Instruct</a></td>
-        <td>Llama 3.2 API Service free during preview.<br>30 requests/minute</td>
-    </tr>
-    <tr>
-        <td><a href="https://console.cloud.google.com/vertex-ai/publishers/meta/model-garden/llama-3.3-70b-instruct-maas" target="_blank">Llama 3.3 70B Instruct</a></td>
-        <td>Llama 3.3 API Service free during preview.<br>30 requests/minute</td>
-    </tr>
-    <tr>
-        <td><a href="https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/gemini-experimental" target="_blank">Gemini 2.0 Flash Experimental</a></td>
-        <td rowspan="3">Experimental Gemini model.<br>10 requests/minute</td>
-    </tr>
-    <tr>
-        <td><a href="https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/gemini-experimental" target="_blank">Gemini 2.0 Flash Thinking Experimental</a></td>
-    </tr>
-    <tr>
-        <td><a href="https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/gemini-experimental" target="_blank">Gemini 2.0 Pro Experimental</a></td>
-    </tr>"""
-
-    table += "</tbody></table>"
-
-    trial_table = ""
-    for idx, model in enumerate(hyperbolic_models):
-        trial_table += "<tr>"
-        if idx == 0:
-            trial_table += f'<td rowspan="{len(hyperbolic_models)}">'
-            trial_table += (
-                '<a href="https://app.hyperbolic.xyz/" target="_blank">Hyperbolic</a>'
+    # --- Groq ---
+    model_list_markdown += "### [Groq](https://console.groq.com)\n\n"
+    if groq_models:
+        model_list_markdown += "<table><thead><tr><th>Model Name</th><th>Model Limits</th></tr></thead><tbody>\n"
+        for model in groq_models:
+            limits_str = get_human_limits(model)
+            model_list_markdown += (
+                f"<tr><td>{model['name']}</td><td>{limits_str}</td></tr>\n"
             )
-            trial_table += "</td>"
-            trial_table += f'<td rowspan="{len(hyperbolic_models)}">$1</td>'
-            trial_table += f'<td rowspan="{len(hyperbolic_models)}"></td>'
-        trial_table += f"<td>{model['name']}</td>"
-        trial_table += "</tr>\n"
+        model_list_markdown += "</tbody></table>\n"
+    model_list_markdown += "\n"
 
-    for idx, model in enumerate(samba_models):
-        trial_table += "<tr>"
+    # --- OVH AI Endpoints ---
+    model_list_markdown += (
+        "### [OVH AI Endpoints (Free Beta)](https://endpoints.ai.cloud.ovh.net/)\n\n"
+    )
+    if ovh_models:
+        model_list_markdown += "<table><thead><tr><th>Model Name</th><th>Model Limits</th></tr></thead><tbody>\n"
+        for model in ovh_models:
+            limits_str = get_human_limits(model)
+            model_list_markdown += (
+                f"<tr><td>{model['name']}</td><td>{limits_str}</td></tr>\n"
+            )
+        model_list_markdown += "</tbody></table>\n"
+    model_list_markdown += "\n"
 
-        if idx == 0:
-            trial_table += f'<td rowspan="{len(samba_models)}">'
-            trial_table += '<a href="https://cloud.sambanova.ai/" target="_blank">SambaNova Cloud</a>'
-            trial_table += "</td>"
-            trial_table += f'<td rowspan="{len(samba_models)}">$5 for 3 months</td>'
+    # --- Together ---
+    together_models = [
+        {
+            "id": "meta-llama/Llama-Vision-Free",
+            "name": "Llama 3.2 11B Vision Instruct",
+            "urlId": "llama-3-2-11b-free",
+        },
+        {
+            "id": "llmeta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+            "name": "Llama 3.3 70B Instruct",
+            "urlId": "llama-3-3-70b-free",
+        },
+        {
+            "id": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free",
+            "name": "DeepSeek R1 Distil Llama 70B",
+            "urlId": "deepseek-r1-distilled-llama-70b-free",
+        },
+    ]
+    model_list_markdown += "### [Together (Free)](https://together.ai)\n\n"
+    model_list_markdown += "**Limits:** Up to 60 requests/minute\n\n"
+    if together_models:
+        for model in together_models:
+            model_list_markdown += (
+                f"- [{model['name']}](https://together.ai/{model['urlId']})\n"
+            )
+    model_list_markdown += "\n"
 
-        trial_table += f"<td></td>"
-        trial_table += f"<td>{model['name']}</td>"
-        trial_table += "</tr>\n"
+    # --- Cohere ---
+    cohere_models = [
+        {"id": "command-a-03-2025", "name": "Command-A"},
+        {"id": "command-r7b-12-2024", "name": "Command-R7B"},
+        {"id": "command-r-plus", "name": "Command-R+"},
+        {"id": "command-r", "name": "Command-R"},
+        {"id": "c4ai-aya-expanse-8b", "name": "Aya Expanse 8B"},
+        {"id": "c4ai-aya-expanse-32b", "name": "Aya Expanse 32B"},
+        {"id": "c4ai-aya-vision-8b", "name": "Aya Vision 8B"},
+        {"id": "c4ai-aya-vision-32b", "name": "Aya Vision 32B"},
+    ]
+    model_list_markdown += "### [Cohere](https://cohere.com)\n\n"
+    model_list_markdown += "**Limits:**\n\n"
+    model_list_markdown += "[20 requests/minute<br>1,000 requests/month](https://docs.cohere.com/docs/rate-limits)\n\n"
+    model_list_markdown += "Models share a common quota.\n\n"
+    if cohere_models:
+        for model in cohere_models:
+            model_list_markdown += f"- {model['name']}\n"
+    model_list_markdown += "\n"
 
-    for idx, model in enumerate(scaleway_models):
-        trial_table += "<tr>"
-        if idx == 0:
-            trial_table += '<td rowspan="' + str(len(scaleway_models)) + '">'
-            trial_table += '<a href="https://console.scaleway.com/generative-api/models" target="_blank">Scaleway Generative APIs</a>'
-            trial_table += "</td>"
-            trial_table += '<td rowspan="' + str(len(scaleway_models)) + '">1,000,000 free tokens</td>'
-        trial_table += f"<td></td>"
-        trial_table += f"<td>{model['name']}</td>"
-        trial_table += "</tr>\n"
+    # --- GitHub Models ---
+    model_list_markdown += (
+        "### [GitHub Models](https://github.com/marketplace/models)\n\n"
+    )
+    model_list_markdown += "Extremely restrictive input/output token limits.\n\n"
+    model_list_markdown += "**Limits:** [Dependent on Copilot subscription tier (Free/Pro/Pro+/Business/Enterprise)](https://docs.github.com/en/github-models/prototyping-with-ai-models#rate-limits)\n\n"
+    if github_models:
+        for model in github_models:
+            model_list_markdown += f"- {model['name']}\n"
+    model_list_markdown += "\n"
+
+    # --- Chutes ---
+    model_list_markdown += "### [Chutes](https://chutes.ai/)\n\n"
+    model_list_markdown += "Distributed, decentralized crypto-based compute.\n"
+    model_list_markdown += "Data is sent to individual hosts.\n\n"
+    if chutes_models:
+        for model in chutes_models:
+            model_list_markdown += f"- {model['name']}\n"
+    model_list_markdown += "\n"
+
+    # --- Cloudflare Workers AI ---
+    model_list_markdown += (
+        "### [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai)\n\n"
+    )
+    model_list_markdown += "**Limits:** [10,000 neurons/day](https://developers.cloudflare.com/workers-ai/platform/pricing/#free-allocation)\n\n"
+    if cloudflare_models:
+        for model in cloudflare_models:
+            model_list_markdown += f"- {model['name']}\n"
+    model_list_markdown += "\n"
+
+    # --- Google Cloud Vertex AI ---
+    vertex_llama_models = [
+        {
+            "id": "llama-3.2-90b-vision-instruct-maas",
+            "name": "Llama 3.2 90B Vision Instruct",
+            "urlId": "llama-3-2-90b-vision-instruct-maas",
+            "limits": {"requests/minute": 30},
+        },
+        {
+            "id": "llama-3.1-70b-instruct-maas",
+            "name": "Llama 3.1 70B Instruct",
+            "urlId": "llama-3-1-405b-instruct-maas",
+            "limits": {"requests/minute": 60},
+        },
+        {
+            "id": "llama-3.1-8b-instruct-maas",
+            "name": "Llama 3.1 8B Instruct",
+            "urlId": "llama-3-1-405b-instruct-maas",
+            "limits": {"requests/minute": 60},
+        },
+    ]
+    vertex_gemini_models = [
+        {
+            "id": "gemini-2.5-pro-exp-03-25",
+            "name": "Gemini 2.5 Pro (Experimental)",
+            "limits": {"requests/minute": 10},
+        },
+        {
+            "id": "gemini-2.0-flash-exp",
+            "name": "Gemini 2.0 Flash (Experimental)",
+            "limits": {"requests/minute": 10},
+        },
+        {
+            "id": "gemini-2.0-flash-thinking-exp-01-21",
+            "name": "Gemini 2.0 Flash Thinking (Experimental)",
+            "limits": {"requests/minute": 10},
+        },
+        {
+            "id": "gemini-exp-1206",
+            "name": "Gemini 2.0 Pro (Experimental)",
+            "limits": {"requests/minute": 10},
+        },
+    ]
+    model_list_markdown += "### [Google Cloud Vertex AI](https://console.cloud.google.com/vertex-ai/model-garden)\n\n"
+    model_list_markdown += "Very stringent payment verification for Google Cloud.\n\n"
+    model_list_markdown += "<table><thead><tr><th>Model Name</th><th>Model Limits</th></tr></thead><tbody>\n"
+
+    # Write Gemini models to table
+    first_gemini = True
+    if vertex_gemini_models:
+        for model in vertex_gemini_models:
+            limits_str = get_human_limits(model)
+            model_list_markdown += f'<tr><td><a href="https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/gemini-experimental" target="_blank">{model['name']}</a></td>'
+            if first_gemini:
+                model_list_markdown += f'<td rowspan="{len(vertex_gemini_models)}">{limits_str}<br>Shared Quota</td>'
+                first_gemini = False
+            model_list_markdown += "</tr>\n"
+
+    # Write Llama models to table
+    if vertex_llama_models:
+        for model in vertex_llama_models:
+            limits_str = get_human_limits(model)
+            model_list_markdown += f'<tr><td><a href="https://console.cloud.google.com/vertex-ai/publishers/meta/model-garden/{model['urlId']}" target="_blank">{model['name']}</a></td><td>{limits_str}<br>Free during preview</td></tr>\n'
+
+    model_list_markdown += "</tbody></table>\n\n"
+
+    # --- Trial Providers Section Generation ---
+    trial_list_markdown = ""
+
+    # --- Static Trial Providers (Markdown List/Simple Entry) ---
+    trial_providers_static = [
+        {
+            "name": "Together",
+            "url": "https://together.ai",
+            "credits": "$1 when you add a payment method",
+            "requirements": "",
+            "models_desc": "[Various open models](https://together.ai/models)",
+        },
+        {
+            "name": "Fireworks",
+            "url": "https://fireworks.ai/",
+            "credits": "$1",
+            "requirements": "",
+            "models_desc": "[Various open models](https://fireworks.ai/models)",
+        },
+        {
+            "name": "Unify",
+            "url": "https://unify.ai/",
+            "credits": "$5 when you add a payment method",
+            "requirements": "",
+            "models_desc": "Routes to other providers, various open models and proprietary models (OpenAI, Gemini, Anthropic, Mistral, Perplexity, etc)",
+        },
+        {
+            "name": "Baseten",
+            "url": "https://app.baseten.co/",
+            "credits": "$30",
+            "requirements": "",
+            "models_desc": "[Any supported model - pay by compute time](https://www.baseten.co/library/)",
+        },
+        {
+            "name": "Nebius",
+            "url": "https://studio.nebius.com/",
+            "credits": "$1",
+            "requirements": "",
+            "models_desc": "[Various open models](https://studio.nebius.ai/models)",
+        },
+        {
+            "name": "Novita",
+            "url": "https://novita.ai/referral?invited_code=E5R0CA&ref=ytblmjc&utm_source=affiliate",
+            "credits": "$0.5 for 1 year, $10 for 3 months for LLMs with [referral code](https://novita.ai/referral?invited_code=E5R0CA&ref=ytblmjc&utm_source=affiliate) + GitHub account connection",
+            "requirements": "",
+            "models_desc": "[Various open models](https://novita.ai/models)",
+        },
+        {
+            "name": "AI21",
+            "url": "https://studio.ai21.com/",
+            "credits": "$10 for 3 months",
+            "requirements": "",
+            "models_desc": "Jamba family of models",
+        },
+        {
+            "name": "Upstage",
+            "url": "https://console.upstage.ai/",
+            "credits": "$10 for 3 months",
+            "requirements": "",
+            "models_desc": "Solar Pro/Mini",
+        },
+        {
+            "name": "NLP Cloud",
+            "url": "https://nlpcloud.com/home",
+            "credits": "$15",
+            "requirements": "Phone number verification",
+            "models_desc": "Various open models",
+        },
+        {
+            "name": "Alibaba Cloud (International) Model Studio",
+            "url": "https://bailian.console.alibabacloud.com/",
+            "credits": "1 million tokens/model",
+            "requirements": "",
+            "models_desc": "[Various open and proprietary Qwen models](https://www.alibabacloud.com/en/product/modelstudio)",
+        },
+        {
+            "name": "Modal",
+            "url": "https://modal.com",
+            "credits": "$5/month upon sign up, $30/month with payment method added",
+            "requirements": "",
+            "models_desc": "Any supported model - pay by compute time",
+        },
+        {
+            "name": "Inference.net",
+            "url": "https://inference.net",
+            "credits": "$1, $25 on responding to email survey",
+            "requirements": "",
+            "models_desc": "Various open models",
+        },
+        {
+            "name": "CentML",
+            "url": "https://centml.com",
+            "credits": "$1",
+            "requirements": "",
+            "models_desc": "Various open models",
+        },
+        {
+            "name": "Kluster",
+            "url": "https://kluster.ai",
+            "credits": "$5",
+            "requirements": "",
+            "models_desc": "Various open models",
+        },
+        {
+            "name": "nCompass",
+            "url": "https://ncompass.tech",
+            "credits": "$1",
+            "requirements": "",
+            "models_desc": "Various open models",
+        },
+    ]
+
+    for provider in trial_providers_static:
+        trial_list_markdown += f"### [{provider['name']}]({provider['url']})\n\n"
+        trial_list_markdown += f"**Credits:** {provider['credits']}\n\n"
+        if provider["requirements"]:
+            trial_list_markdown += f"**Requirements:** {provider['requirements']}\n\n"
+        trial_list_markdown += f"**Models:** {provider['models_desc']}\n\n"
+
+    # --- Hyperbolic (Trial - Table) ---
+    if hyperbolic_models:
+        trial_list_markdown += "### [Hyperbolic](https://app.hyperbolic.xyz/)\n\n"
+        trial_list_markdown += "**Credits:** $1\n\n"
+        trial_list_markdown += "**Models:**\n"
+        for model in hyperbolic_models:
+            trial_list_markdown += f"- {model['name']}\n"
+        trial_list_markdown += "\n"
+
+    # --- SambaNova Cloud (Trial - Table) ---
+    if samba_models:
+        trial_list_markdown += "### [SambaNova Cloud](https://cloud.sambanova.ai/)\n\n"
+        trial_list_markdown += "**Credits:** $5 for 3 months\n\n"
+        trial_list_markdown += "**Models:**\n"
+        for model in samba_models:
+            trial_list_markdown += f"- {model['name']}\n"
+        trial_list_markdown += "\n"
+
+    # --- Scaleway Generative APIs (Trial - Table) ---
+    if scaleway_models:
+        trial_list_markdown += "### [Scaleway Generative APIs](https://console.scaleway.com/generative-api/models)\n\n"
+        trial_list_markdown += "**Credits:** 1,000,000 free tokens\n\n"
+        trial_list_markdown += "**Models:**\n"
+        for model in scaleway_models:
+            trial_list_markdown += f"- {model['name']}\n"
+        trial_list_markdown += "\n"
 
     if MISSING_MODELS:
         logger.warning("Missing models:")
@@ -1109,19 +1027,20 @@ def main():
             "\n" + "\n".join([f'"{model}": "{model}",' for model in MISSING_MODELS])
         )
 
-    script_dir = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(script_dir, "README_template.md"), "r") as f:
         readme = f.read()
     warning = """<!---
 WARNING: DO NOT EDIT THIS FILE DIRECTLY. IT IS GENERATED BY src/pull_available_models.py
 --->
 """
+    initial_templated = (
+        (warning + readme)
+        .replace("{{MODEL_LIST}}", model_list_markdown)
+        .replace("{{TRIAL_LIST_MARKDOWN}}", trial_list_markdown)
+    )
+    toc_markdown = generate_toc(initial_templated)
     with open(os.path.join(script_dir, "..", "README.md"), "w") as f:
-        f.write(
-            (warning + readme)
-            .replace("{{MODEL_LIST}}", table)
-            .replace("{{TRIAL_MODEL_LIST}}", trial_table)
-        )
+        f.write(initial_templated.replace("{{TOC}}", toc_markdown))
     logger.info("Wrote models to README.md")
 
 
