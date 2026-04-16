@@ -730,6 +730,26 @@ def main():
             "limits": gemini_models.get("gemini-2.5-flash-lite", {}),
         },
         {
+            "id": "gemini-3.1-flash-tts-preview",
+            "name": "Gemini 3.1 Flash TTS",
+            "limits": gemini_models.get("gemini-3.1-flash-tts", {}),
+        },
+        {
+            "id": "gemini-2.5-flash-preview-tts",
+            "name": "Gemini 2.5 Flash TTS",
+            "limits": gemini_models.get("gemini-2.5-flash-tts", {}),
+        },
+        {
+            "id": "gemini-robotics-er-1.6-preview",
+            "name": "Gemini Robotics-ER 1.6",
+            "limits": gemini_models.get("gemini-robotics-er-1.6-preview", {}),
+        },
+        {
+            "id": "gemini-robotics-er-1.5-preview",
+            "name": "Gemini Robotics-ER 1.5",
+            "limits": gemini_models.get("gemini-robotics-er-1.5-preview", {}),
+        },
+        {
             "id": "gemma-3-27b-it",
             "name": "Gemma 3 27B Instruct",
             "limits": gemini_models.get("gemma-3-27b", {}),
