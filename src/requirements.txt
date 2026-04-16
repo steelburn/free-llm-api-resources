@@ -1,5 +1,4 @@
-requests
-python-dotenv
-google-cloud-quotas
-mistralai
-beautifulsoup4
+requests==2.33.1
+python-dotenv==1.2.2
+google-cloud-quotas==0.6.0
+beautifulsoup4==4.14.3

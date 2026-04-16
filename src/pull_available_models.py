@@ -7,7 +7,6 @@ import requests
 import os
 from dotenv import load_dotenv
 from google.cloud import cloudquotas_v1
-from mistralai import Mistral
 from concurrent.futures import ThreadPoolExecutor
 import time
 import re
@@ -22,10 +21,6 @@ from data import (
 
 load_dotenv()
 script_dir = os.path.dirname(os.path.abspath(__file__))
-
-# Global clients
-mistral_client = Mistral(api_key=os.environ["MISTRAL_API_KEY"])
-last_mistral_request_time = 0
 
 
 def create_logger(provider_name):
@@ -483,20 +478,6 @@ def fetch_lambda_models(logger):
         )
     ret_models = sorted(ret_models, key=lambda x: x["name"])
     return ret_models
-
-
-def rate_limited_mistral_chat(client, **kwargs):
-    global last_mistral_request_time
-
-    # Ensure at least 1 second between requests
-    current_time = time.time()
-    time_since_last = current_time - last_mistral_request_time
-    if time_since_last < 1:
-        time.sleep(1 - time_since_last)
-
-    response = client.chat.complete(**kwargs)
-    last_mistral_request_time = time.time()
-    return response
 
 
 def fetch_samba_models(logger):
